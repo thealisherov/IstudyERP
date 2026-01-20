@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { groupsApi } from '../../api/groups.api';
 import { studentsApi } from '../../api/students.api';
 import { attendanceApi } from '../../api/attendance.api';
-import { paymentsApi } from '../../api/payments.api';
 import { formatCurrency, getUserBranchId } from '../../api/helpers';
 import {
   FiUsers,
@@ -16,8 +15,7 @@ import {
   FiCalendar,
   FiMessageSquare,
   FiSearch,
-  FiCheckCircle,
-  FiEdit2
+  FiCheckCircle
 } from 'react-icons/fi';
 import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
@@ -31,20 +29,6 @@ const GroupDetails = () => {
       year: currentDate.getFullYear(),
       month: currentDate.getMonth() + 1
   });
-
-  const monthNames = [
-    'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
-    'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'
-  ];
-
-  const getPreviousMonth = (year, month) => {
-    if (month === 1) {
-      return { year: year - 1, month: 12 };
-    }
-    return { year, month: month - 1 };
-  };
-
-  const prevDate = getPreviousMonth(selectedDate.year, selectedDate.month);
 
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState('');
@@ -60,30 +44,11 @@ const GroupDetails = () => {
   const [selectedStudentForHistory, setSelectedStudentForHistory] = useState(null);
   const [studentHistory, setStudentHistory] = useState([]);
 
-  // Payment Modal State
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [selectedStudentForPayment, setSelectedStudentForPayment] = useState(null);
-  const [paymentFormData, setPaymentFormData] = useState({
-    amount: '',
-    description: '',
-    paymentMethod: 'CASH'
-  });
-
   // Fetch current month group data (for statistics and table)
   const { data: group, isLoading: groupLoading } = useQuery({
     queryKey: ['group', id, selectedDate],
     queryFn: async () => {
       const res = await groupsApi.getById(id, selectedDate.year, selectedDate.month);
-      return res.data;
-    },
-    enabled: !!id
-  });
-
-  // Fetch previous month group data
-  const { data: prevGroup } = useQuery({
-    queryKey: ['group', id, prevDate],
-    queryFn: async () => {
-      const res = await groupsApi.getById(id, prevDate.year, prevDate.month);
       return res.data;
     },
     enabled: !!id
@@ -255,62 +220,6 @@ const GroupDetails = () => {
       window.location.href = `sms:${cleanPhone}?body=${encodedMessage}`;
   };
 
-  // Payment Mutations
-  const paymentMutation = useMutation({
-    mutationFn: (data) => paymentsApi.create(data),
-    onSuccess: () => {
-      toast.success("To'lov muvaffaqiyatli qo'shildi");
-      queryClient.invalidateQueries(['group', id]);
-      setIsPaymentModalOpen(false);
-      setPaymentFormData({ amount: '', description: '', paymentMethod: 'CASH' });
-    },
-    onError: (err) => {
-      toast.error(err.response?.data?.message || "To'lov qo'shishda xatolik");
-    }
-  });
-
-  const deletePaymentMutation = useMutation({
-    mutationFn: (paymentId) => paymentsApi.delete(paymentId),
-    onSuccess: () => {
-      toast.success("To'lov o'chirildi");
-      queryClient.invalidateQueries(['group', id]);
-    },
-    onError: (err) => {
-      toast.error(err.response?.data?.message || "To'lovni o'chirishda xatolik");
-    }
-  });
-
-  const handleOpenPaymentModal = (student) => {
-    setSelectedStudentForPayment(student);
-    setPaymentFormData({
-      amount: student.remainingAmount || '',
-      description: '',
-      paymentMethod: 'CASH'
-    });
-    setIsPaymentModalOpen(true);
-  };
-
-  const handlePaymentSubmit = async (e) => {
-    e.preventDefault();
-    const payload = {
-      studentId: selectedStudentForPayment.studentId,
-      groupId: Number(id),
-      amount: Number(paymentFormData.amount),
-      description: paymentFormData.description,
-      paymentYear: selectedDate.year,
-      paymentMonth: selectedDate.month,
-      category: paymentFormData.paymentMethod,
-      branchId: Number(getUserBranchId())
-    };
-    paymentMutation.mutate(payload);
-  };
-
-  const handleDeletePayment = (studentId) => {
-    if (!window.confirm("Haqiqatan ham to'lovni o'chirmoqchimisiz?")) return;
-    // We'll need to get the payment ID - for now using student payment history
-    toast.error("Ushbu funksiya hali ishlanmoqda");
-  };
-
   if (groupLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -455,13 +364,24 @@ const GroupDetails = () => {
             <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                        <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase">F.I.SH</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Telefon</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Ota-ona</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">To'langan</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Qarzdorlik</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Status</th>
-                        <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right md:text-left">Amallar</th>
+                        <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase sticky left-0 bg-gray-50 z-10">F.I.SH</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">TELEFON</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">OTA-ONA</th>
+                        
+                        {/* Previous Month Column */}
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-center border-l border-r border-gray-200 bg-gray-100">
+                            {getMonthName(previousDate.month).toUpperCase()}
+                            <div className="text-[10px] font-normal text-gray-400 mt-1">To'langan / Qarzdorlik</div>
+                        </th>
+
+                        {/* Current Month Column */}
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-center border-r border-gray-200 bg-blue-50 text-blue-700">
+                            {getMonthName(selectedDate.month).toUpperCase()}
+                            <div className="text-[10px] font-normal text-blue-400 mt-1">To'langan / Qarzdorlik</div>
+                        </th>
+
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">STATUS</th>
+                        <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right md:text-left">AMALLAR</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -470,79 +390,97 @@ const GroupDetails = () => {
                             <td colSpan="7" className="px-4 md:px-6 py-4 text-center text-gray-500">Guruhda o'quvchilar yo'q</td>
                         </tr>
                     ) : (
-                        studentPayments.map((student) => (
-                            <tr key={student.studentId} className="hover:bg-gray-50">
-                                <td className="px-4 md:px-6 py-4 text-sm font-medium text-gray-900">
-                                    <div className="flex flex-col gap-1">
-                                        <Link to={`/students/${student.studentId}`} className="hover:text-blue-600 text-base md:text-sm">
-                                            {student.studentName}
-                                        </Link>
-                                        {/* Attendance Status Badge */}
-                                        {(() => {
-                                            const status = existingAttendance?.find(a => a.studentId === student.studentId)?.status;
-                                            if (status) {
-                                                return (
-                                                    <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded text-xs font-bold ${
-                                                        status === 'PRESENT' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                                    }`}>
-                                                        {status === 'PRESENT' ? 'BOR' : 'YO\'Q'}
-                                                    </span>
-                                                );
-                                            }
-                                            return null;
-                                        })()}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
-                                    {student.phoneNumber || '-'}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
-                                    {student.parentPhoneNumber || '-'}
-                                </td>
-                                <td className="px-6 py-4 text-sm font-bold text-green-600 hidden md:table-cell">
-                                    {formatCurrency(student.totalPaidInMonth)}
-                                </td>
-                                <td className="px-6 py-4 text-sm font-bold text-red-600 hidden md:table-cell">
-                                    {formatCurrency(student.remainingAmount)}
-                                </td>
-                                <td className="px-6 py-4 text-sm hidden md:table-cell">
-                                    {student.paymentStatus === 'PAID' && (
-                                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">To'liq</span>
-                                    )}
-                                    {student.paymentStatus === 'PARTIAL' && (
-                                        <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-semibold">Qisman</span>
-                                    )}
-                                    {student.paymentStatus === 'UNPAID' && (
-                                        <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-semibold">To'lanmagan</span>
-                                    )}
-                                </td>
-                                <td className="px-4 md:px-6 py-4 text-sm">
-                                    <div className="flex items-center justify-end md:justify-start gap-2">
-                                        <button
-                                            onClick={() => handleSendAbsentSms(student)}
-                                            className="cursor-pointer text-yellow-600 hover:text-yellow-700 bg-yellow-50 hover:bg-yellow-100 p-2 rounded-lg transition-colors"
-                                            title="Darsga kelmadi SMS"
-                                        >
-                                            <FiMessageSquare size={20} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleOpenHistoryModal(student)}
-                                            className="cursor-pointer text-blue-600 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition-colors hidden md:block"
-                                            title="Davomat tarixi"
-                                        >
-                                            <FiCalendar />
-                                        </button>
-                                        <button
-                                            onClick={() => handleRemoveStudent(student.studentId)}
-                                            className="cursor-pointer text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition-colors hidden md:block"
-                                            title="Guruhdan o'chirish"
-                                        >
-                                            <FiTrash2 />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))
+                        studentPayments.map((student) => {
+                            const prevRecord = prevGroup?.studentPayments?.find(s => s.studentId === student.studentId);
+                            
+                            return (
+                                <tr key={student.studentId} className="hover:bg-gray-50">
+                                    <td className="px-4 md:px-6 py-4 text-sm font-medium text-gray-900 sticky left-0 bg-white hover:bg-gray-50 z-10">
+                                        <div className="flex flex-col gap-1">
+                                            <Link to={`/students/${student.studentId}`} className="hover:text-blue-600 text-base md:text-sm">
+                                                {student.studentName}
+                                            </Link>
+                                            {(() => {
+                                                const status = existingAttendance?.find(a => a.studentId === student.studentId)?.status;
+                                                if (status) {
+                                                    return (
+                                                        <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded text-xs font-bold ${
+                                                            status === 'PRESENT' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                                        }`}>
+                                                            {status === 'PRESENT' ? 'BOR' : 'YO\'Q'}
+                                                        </span>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
+                                        {student.phoneNumber || '-'}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
+                                        {student.parentPhoneNumber || '-'}
+                                    </td>
+                                    
+                                    {/* Previous Month Data */}
+                                    <td className="px-6 py-4 text-sm text-center border-l border-r border-gray-100 bg-gray-50">
+                                        {prevRecord ? (
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-green-600 font-bold text-sm">{formatCurrency(prevRecord.totalPaidInMonth)}</span>
+                                                <span className="text-red-500 font-bold text-sm">{formatCurrency(prevRecord.remainingAmount)}</span>
+                                            </div>
+                                        ) : (
+                                            <span className="text-gray-400 text-xs">-</span>
+                                        )}
+                                    </td>
+
+                                    {/* Current Month Data */}
+                                    <td className="px-6 py-4 text-sm text-center border-r border-gray-100 bg-blue-50/30">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-green-600 font-bold text-sm">{formatCurrency(student.totalPaidInMonth)}</span>
+                                            <span className="text-red-600 font-bold text-sm">{formatCurrency(student.remainingAmount)}</span>
+                                        </div>
+                                    </td>
+
+                                    <td className="px-6 py-4 text-sm hidden md:table-cell">
+                                        {student.paymentStatus === 'PAID' && (
+                                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">To'liq</span>
+                                        )}
+                                        {student.paymentStatus === 'PARTIAL' && (
+                                            <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-semibold">Qisman</span>
+                                        )}
+                                        {student.paymentStatus === 'UNPAID' && (
+                                            <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-semibold">To'lanmagan</span>
+                                        )}
+                                    </td>
+                                    <td className="px-4 md:px-6 py-4 text-sm">
+                                        <div className="flex items-center justify-end md:justify-start gap-2">
+                                            <button
+                                                onClick={() => handleSendAbsentSms(student)}
+                                                className="cursor-pointer text-yellow-600 hover:text-yellow-700 bg-yellow-50 hover:bg-yellow-100 p-2 rounded-lg transition-colors"
+                                                title="Darsga kelmadi SMS"
+                                            >
+                                                <FiMessageSquare size={20} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleOpenHistoryModal(student)}
+                                                className="cursor-pointer text-blue-600 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition-colors hidden md:block"
+                                                title="Davomat tarixi"
+                                            >
+                                                <FiCalendar />
+                                            </button>
+                                            <button
+                                                onClick={() => handleRemoveStudent(student.studentId)}
+                                                className="cursor-pointer text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition-colors hidden md:block"
+                                                title="Guruhdan o'chirish"
+                                            >
+                                                <FiTrash2 />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })
                     )}
                 </tbody>
             </table>
@@ -714,91 +652,6 @@ const GroupDetails = () => {
                 </button>
             </div>
           </form>
-      </Modal>
-
-      {/* Payment Modal */}
-      <Modal
-        isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
-        title={`To'lov qilish - ${selectedStudentForPayment?.studentName || ''}`}
-      >
-        <form onSubmit={handlePaymentSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Summa (UZS)</label>
-            <input
-              type="number"
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              value={paymentFormData.amount}
-              onChange={(e) => setPaymentFormData({...paymentFormData, amount: e.target.value})}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">To'lov usuli</label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer p-3 border-2 rounded-lg flex-1 transition-all hover:bg-gray-50"
-                style={{
-                  borderColor: paymentFormData.paymentMethod === 'CASH' ? '#3b82f6' : '#d1d5db',
-                  backgroundColor: paymentFormData.paymentMethod === 'CASH' ? '#eff6ff' : 'transparent'
-                }}>
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="CASH"
-                  checked={paymentFormData.paymentMethod === 'CASH'}
-                  onChange={(e) => setPaymentFormData({...paymentFormData, paymentMethod: e.target.value})}
-                  className="w-4 h-4"
-                />
-                <FiDollarSign className="text-green-600" />
-                <span className="font-medium">Naqd</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer p-3 border-2 rounded-lg flex-1 transition-all hover:bg-gray-50"
-                style={{
-                  borderColor: paymentFormData.paymentMethod === 'CARD' ? '#3b82f6' : '#d1d5db',
-                  backgroundColor: paymentFormData.paymentMethod === 'CARD' ? '#eff6ff' : 'transparent'
-                }}>
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="CARD"
-                  checked={paymentFormData.paymentMethod === 'CARD'}
-                  onChange={(e) => setPaymentFormData({...paymentFormData, paymentMethod: e.target.value})}
-                  className="w-4 h-4"
-                />
-                <FiDollarSign className="text-blue-600" />
-                <span className="font-medium">Karta</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Izoh</label>
-            <textarea
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              rows="3"
-              value={paymentFormData.description}
-              onChange={(e) => setPaymentFormData({...paymentFormData, description: e.target.value})}
-            ></textarea>
-          </div>
-
-          <div className="flex justify-end gap-3 mt-6">
-            <button
-              type="button"
-              onClick={() => setIsPaymentModalOpen(false)}
-              className="cursor-pointer px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              Bekor qilish
-            </button>
-            <button
-              type="submit"
-              disabled={paymentMutation.isLoading}
-              className="cursor-pointer px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {paymentMutation.isLoading ? 'Yuklanmoqda...' : 'Saqlash'}
-            </button>
-          </div>
-        </form>
       </Modal>
     </div>
   );
