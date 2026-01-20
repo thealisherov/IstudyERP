@@ -36,9 +36,9 @@ const Login = () => {
       <div className="w-full max-w-md mx-4">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl mb-4 shadow-lg">
-            <span className="text-3xl text-white font-bold">B</span>
+            <span className="text-3xl text-white font-bold">I</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Big Ideas LC</h1>
+          <h1 className="text-3xl font-bold text-gray-900">IStudy</h1>
           <p className="text-gray-600 mt-2">ERP-CRM System</p>
         </div>
 
@@ -129,7 +129,7 @@ const Login = () => {
         </div>
 
         <p className="text-center text-sm text-gray-500 mt-6">
-          © {new Date().getFullYear()} Big Ideas LC. Barcha huquqlar himoyalangan.
+          © {new Date().getFullYear()} IStudy. Barcha huquqlar himoyalangan.
         </p>
       </div>
     </div>
