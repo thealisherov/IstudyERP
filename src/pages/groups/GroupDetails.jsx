@@ -31,6 +31,20 @@ const GroupDetails = () => {
       month: currentDate.getMonth() + 1
   });
 
+  const monthNames = [
+    'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+    'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'
+  ];
+
+  const getPreviousMonth = (year, month) => {
+    if (month === 1) {
+      return { year: year - 1, month: 12 };
+    }
+    return { year, month: month - 1 };
+  };
+
+  const prevDate = getPreviousMonth(selectedDate.year, selectedDate.month);
+
   // Add Student Modal State
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState('');
@@ -54,6 +68,16 @@ const [attendanceDate, setAttendanceDate] = useState(
     queryKey: ['group', id, selectedDate],
     queryFn: async () => {
       const res = await groupsApi.getById(id, selectedDate.year, selectedDate.month);
+      return res.data;
+    },
+    enabled: !!id
+  });
+
+  // Fetch previous month group data
+  const { data: prevGroup } = useQuery({
+    queryKey: ['group', id, prevDate],
+    queryFn: async () => {
+      const res = await groupsApi.getById(id, prevDate.year, prevDate.month);
       return res.data;
     },
     enabled: !!id
@@ -380,9 +404,29 @@ const [attendanceDate, setAttendanceDate] = useState(
                         <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase">F.I.SH</th>
                         <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Telefon</th>
                         <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Ota-ona</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">To'langan</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Qarzdorlik</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Status</th>
+
+                        {/* Previous Month */}
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell border-l border-gray-200 bg-gray-50">
+                            {monthNames[prevDate.month - 1]} (To'langan)
+                        </th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell bg-gray-50">
+                            {monthNames[prevDate.month - 1]} (Qarzdorlik)
+                        </th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell bg-gray-50">
+                             {monthNames[prevDate.month - 1]} (Status)
+                        </th>
+
+                        {/* Current Month */}
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell border-l border-gray-200">
+                            {monthNames[selectedDate.month - 1]} (To'langan)
+                        </th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">
+                            {monthNames[selectedDate.month - 1]} (Qarzdorlik)
+                        </th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">
+                            {monthNames[selectedDate.month - 1]} (Status)
+                        </th>
+
                         <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right md:text-left">Amallar</th>
                     </tr>
                 </thead>
@@ -392,7 +436,10 @@ const [attendanceDate, setAttendanceDate] = useState(
                             <td colSpan="7" className="px-4 md:px-6 py-4 text-center text-gray-500">Guruhda o'quvchilar yo'q</td>
                         </tr>
                     ) : (
-                        studentPayments.map((student) => (
+                        studentPayments.map((student) => {
+                            const prevStudent = prevGroup?.studentPayments?.find(s => s.studentId === student.studentId);
+
+                            return (
                             <tr key={student.studentId} className="hover:bg-gray-50">
                                 <td className="px-4 md:px-6 py-4 text-sm font-medium text-gray-900">
                                     <div className="flex flex-col gap-1">
@@ -421,7 +468,32 @@ const [attendanceDate, setAttendanceDate] = useState(
                                 <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
                                     {student.parentPhoneNumber || '-'}
                                 </td>
-                                <td className="px-6 py-4 text-sm font-bold text-green-600 hidden md:table-cell">
+
+                                {/* Previous Month Data */}
+                                <td className="px-6 py-4 text-sm font-bold text-green-600 hidden md:table-cell border-l border-gray-200 bg-gray-50">
+                                    {prevStudent ? formatCurrency(prevStudent.totalPaidInMonth) : '-'}
+                                </td>
+                                <td className="px-6 py-4 text-sm font-bold text-red-600 hidden md:table-cell bg-gray-50">
+                                    {prevStudent ? formatCurrency(prevStudent.remainingAmount) : '-'}
+                                </td>
+                                <td className="px-6 py-4 text-sm hidden md:table-cell bg-gray-50">
+                                    {prevStudent ? (
+                                        <>
+                                            {prevStudent.paymentStatus === 'PAID' && (
+                                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">To'liq</span>
+                                            )}
+                                            {prevStudent.paymentStatus === 'PARTIAL' && (
+                                                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-semibold">Qisman</span>
+                                            )}
+                                            {prevStudent.paymentStatus === 'UNPAID' && (
+                                                <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-semibold">To'lanmagan</span>
+                                            )}
+                                        </>
+                                    ) : '-'}
+                                </td>
+
+                                {/* Current Month Data */}
+                                <td className="px-6 py-4 text-sm font-bold text-green-600 hidden md:table-cell border-l border-gray-200">
                                     {formatCurrency(student.totalPaidInMonth)}
                                 </td>
                                 <td className="px-6 py-4 text-sm font-bold text-red-600 hidden md:table-cell">
@@ -464,7 +536,8 @@ const [attendanceDate, setAttendanceDate] = useState(
                                     </div>
                                 </td>
                             </tr>
-                        ))
+                            );
+                        })
                     )}
                 </tbody>
             </table>
