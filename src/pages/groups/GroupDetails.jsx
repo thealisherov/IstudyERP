@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { groupsApi } from '../../api/groups.api';
 import { studentsApi } from '../../api/students.api';
 import { attendanceApi } from '../../api/attendance.api';
+import { paymentsApi } from '../../api/payments.api';
 import { formatCurrency, getUserBranchId } from '../../api/helpers';
 import {
   FiUsers,
@@ -15,7 +16,8 @@ import {
   FiCalendar,
   FiMessageSquare,
   FiSearch,
-  FiCheckCircle
+  FiCheckCircle,
+  FiEdit2
 } from 'react-icons/fi';
 import Modal from '../../components/common/Modal';
 import toast from 'react-hot-toast';
@@ -24,7 +26,6 @@ const GroupDetails = () => {
   const { id } = useParams();
   const queryClient = useQueryClient();
   
-  // Hozirgi vaqtni olish
   const currentDate = new Date();
   const [selectedDate, setSelectedDate] = useState({
       year: currentDate.getFullYear(),
@@ -45,25 +46,30 @@ const GroupDetails = () => {
 
   const prevDate = getPreviousMonth(selectedDate.year, selectedDate.month);
 
-  // Add Student Modal State
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
 
-  // Attendance Modal State
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
-  // GroupDetails.jsx da attendanceDate to'g'ri formatda bo'lishi kerak
-const [attendanceDate, setAttendanceDate] = useState(
-  new Date().toISOString().split('T')[0] // "YYYY-MM-DD" format
-);
-  const [attendanceList, setAttendanceList] = useState({}); // { studentId: status }
+  const [attendanceDate, setAttendanceDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
+  const [attendanceList, setAttendanceList] = useState({});
 
-  // Student Attendance History Modal State
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedStudentForHistory, setSelectedStudentForHistory] = useState(null);
   const [studentHistory, setStudentHistory] = useState([]);
 
-  // Fetch group data with selected period
+  // Payment Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedStudentForPayment, setSelectedStudentForPayment] = useState(null);
+  const [paymentFormData, setPaymentFormData] = useState({
+    amount: '',
+    description: '',
+    paymentMethod: 'CASH'
+  });
+
+  // Fetch current month group data (for statistics and table)
   const { data: group, isLoading: groupLoading } = useQuery({
     queryKey: ['group', id, selectedDate],
     queryFn: async () => {
@@ -83,7 +89,27 @@ const [attendanceDate, setAttendanceDate] = useState(
     enabled: !!id
   });
 
-  // Fetch all students for the "Add Student" dropdown
+  // Calculate previous month
+  const previousDate = {
+    year: selectedDate.month === 1 ? selectedDate.year - 1 : selectedDate.year,
+    month: selectedDate.month === 1 ? 12 : selectedDate.month - 1
+  };
+
+  // Fetch previous month group data (only for table)
+  const { data: prevGroup } = useQuery({
+    queryKey: ['group', id, previousDate],
+    queryFn: async () => {
+      const res = await groupsApi.getById(id, previousDate.year, previousDate.month);
+      return res.data;
+    },
+    enabled: !!id
+  });
+
+  const getMonthName = (m) => {
+    const months = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
+    return months[m - 1];
+  };
+
   const { data: allStudents = [] } = useQuery({
       queryKey: ['allStudents'],
       queryFn: async () => {
@@ -93,7 +119,6 @@ const [attendanceDate, setAttendanceDate] = useState(
       enabled: isAddStudentModalOpen
   });
 
-  // Add student mutation
   const addStudentMutation = useMutation({
       mutationFn: ({ groupId, studentId }) => groupsApi.addStudent(groupId, studentId),
       onSuccess: () => {
@@ -109,7 +134,6 @@ const [attendanceDate, setAttendanceDate] = useState(
       }
   });
 
-  // Remove student mutation
   const removeStudentMutation = useMutation({
       mutationFn: ({ groupId, studentId }) => groupsApi.removeStudent(groupId, studentId),
       onSuccess: () => {
@@ -143,8 +167,6 @@ const [attendanceDate, setAttendanceDate] = useState(
     },
     onError: (err) => {
       console.error("Error marking attendance:", err);
-      toast.error("Davomatni saqlashda xatolik yuz berdi");
-      console.error("Backend error details:", err.response?.data);
       toast.error(err.response?.data?.message || "Davomatni saqlashda xatolik yuz berdi");
     }
   });
@@ -162,23 +184,15 @@ const [attendanceDate, setAttendanceDate] = useState(
     enabled: !!id && !!attendanceDate
   });
 
-  // Load existing attendance into state when data arrives
   React.useEffect(() => {
     if (existingAttendance && group?.studentPayments) {
       const initialAttendance = {};
-
-      // Default all to ABSENT if not found, or load existing
       group.studentPayments.forEach(student => {
         const record = existingAttendance.find(a => a.studentId === student.studentId);
-        initialAttendance[student.studentId] = record ? record.status : 'ABSENT';
-        // Note: Logic above assumes we want to default to ABSENT or PRESENT.
-        // Usually default is PRESENT. Let's make default PRESENT.
-        if (!record) initialAttendance[student.studentId] = 'PRESENT';
+        initialAttendance[student.studentId] = record ? record.status : 'PRESENT';
       });
-
       setAttendanceList(initialAttendance);
     } else if (group?.studentPayments) {
-        // Initialize all as PRESENT
         const initialAttendance = {};
         group.studentPayments.forEach(student => {
             initialAttendance[student.studentId] = 'PRESENT';
@@ -187,24 +201,23 @@ const [attendanceDate, setAttendanceDate] = useState(
     }
   }, [existingAttendance, group, isAttendanceModalOpen]);
 
- const handleAttendanceSubmit = () => {
-  const attendances = Object.entries(attendanceList).map(
-    ([studentId, status]) => ({
-      studentId: Number(studentId),
-      status
-    })
-  );
+  const handleAttendanceSubmit = () => {
+    const attendances = Object.entries(attendanceList).map(
+      ([studentId, status]) => ({
+        studentId: Number(studentId),
+        status
+      })
+    );
 
-  const payload = {
-    branchId: Number(getUserBranchId()),
-    groupId: Number(id),
-    attendanceDate: attendanceDate,
-    attendances
+    const payload = {
+      branchId: Number(getUserBranchId()),
+      groupId: Number(id),
+      attendanceDate: attendanceDate,
+      attendances
+    };
+
+    attendanceMutation.mutate(payload);
   };
-
-  console.log("Yuborilayotgan payload:", payload);
-  attendanceMutation.mutate(payload);
-};
 
   const handleOpenAttendanceModal = () => {
       setAttendanceDate(new Date().toISOString().split('T')[0]);
@@ -235,12 +248,67 @@ const [attendanceDate, setAttendanceDate] = useState(
           return;
       }
 
-      // SMS havolasi uchun raqamdagi bo'sh joylarni olib tashlash
       const cleanPhone = phone.replace(/\s/g, '');
       const message = `Assalomu alaykum. ${student.studentName} bugun darsga qatnashmadi.`;
       const encodedMessage = encodeURIComponent(message);
       
       window.location.href = `sms:${cleanPhone}?body=${encodedMessage}`;
+  };
+
+  // Payment Mutations
+  const paymentMutation = useMutation({
+    mutationFn: (data) => paymentsApi.create(data),
+    onSuccess: () => {
+      toast.success("To'lov muvaffaqiyatli qo'shildi");
+      queryClient.invalidateQueries(['group', id]);
+      setIsPaymentModalOpen(false);
+      setPaymentFormData({ amount: '', description: '', paymentMethod: 'CASH' });
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "To'lov qo'shishda xatolik");
+    }
+  });
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: (paymentId) => paymentsApi.delete(paymentId),
+    onSuccess: () => {
+      toast.success("To'lov o'chirildi");
+      queryClient.invalidateQueries(['group', id]);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "To'lovni o'chirishda xatolik");
+    }
+  });
+
+  const handleOpenPaymentModal = (student) => {
+    setSelectedStudentForPayment(student);
+    setPaymentFormData({
+      amount: student.remainingAmount || '',
+      description: '',
+      paymentMethod: 'CASH'
+    });
+    setIsPaymentModalOpen(true);
+  };
+
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault();
+    const payload = {
+      studentId: selectedStudentForPayment.studentId,
+      groupId: Number(id),
+      amount: Number(paymentFormData.amount),
+      description: paymentFormData.description,
+      paymentYear: selectedDate.year,
+      paymentMonth: selectedDate.month,
+      category: paymentFormData.paymentMethod,
+      branchId: Number(getUserBranchId())
+    };
+    paymentMutation.mutate(payload);
+  };
+
+  const handleDeletePayment = (studentId) => {
+    if (!window.confirm("Haqiqatan ham to'lovni o'chirmoqchimisiz?")) return;
+    // We'll need to get the payment ID - for now using student payment history
+    toast.error("Ushbu funksiya hali ishlanmoqda");
   };
 
   if (groupLoading) {
@@ -255,7 +323,7 @@ const [attendanceDate, setAttendanceDate] = useState(
     return <div className="p-6 text-center text-gray-500">Guruh topilmadi</div>;
   }
 
-  // Calculate statistics
+  // STATISTICS - faqat joriy oy uchun
   const studentPayments = group.studentPayments || [];
   const totalStudents = studentPayments.length;
   const paidStudents = studentPayments.filter(s => s.paymentStatus === 'PAID').length;
@@ -325,7 +393,7 @@ const [attendanceDate, setAttendanceDate] = useState(
         </div>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Statistics Cards - FAQAT JORIY OY */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
@@ -339,7 +407,7 @@ const [attendanceDate, setAttendanceDate] = useState(
           <div className="flex items-center justify-between mb-2">
             <FiDollarSign className="text-green-600 text-2xl" />
           </div>
-          <p className="text-sm text-gray-600 mb-1">To'plangan</p>
+          <p className="text-sm text-gray-600 mb-1">To'plangan ({getMonthName(selectedDate.month)})</p>
           <p className="text-2xl font-bold text-green-600">{formatCurrency(totalRevenue)}</p>
           <p className="text-xs text-gray-500 mt-1">{paidStudents} ta to'liq to'lagan</p>
         </div>
@@ -348,7 +416,7 @@ const [attendanceDate, setAttendanceDate] = useState(
           <div className="flex items-center justify-between mb-2">
             <FiDollarSign className="text-red-600 text-2xl" />
           </div>
-          <p className="text-sm text-gray-600 mb-1">Kutilayotgan</p>
+          <p className="text-sm text-gray-600 mb-1">Kutilayotgan ({getMonthName(selectedDate.month)})</p>
           <p className="text-2xl font-bold text-red-600">{formatCurrency(remainingRevenue)}</p>
           <p className="text-xs text-gray-500 mt-1">{unpaidStudents} ta to'lamagan</p>
         </div>
@@ -357,12 +425,12 @@ const [attendanceDate, setAttendanceDate] = useState(
           <div className="flex items-center justify-between mb-2">
             <FiUsers className="text-yellow-600 text-2xl" />
           </div>
-          <p className="text-sm text-gray-600 mb-1">Qisman</p>
+          <p className="text-sm text-gray-600 mb-1">Qisman ({getMonthName(selectedDate.month)})</p>
           <p className="text-3xl font-bold text-yellow-600">{partialStudents}</p>
         </div>
       </div>
 
-      {/* Students Table */}
+      {/* Students Table - IKKI OYLIK */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <h2 className="text-xl font-bold text-gray-900">Guruh o'quvchilari</h2>
@@ -373,60 +441,26 @@ const [attendanceDate, setAttendanceDate] = useState(
                 >
                     <FiCheckCircle /> Davomat
                 </button>
-               <button
-  onClick={() => setIsAddStudentModalOpen(true)}
-  className="
-    flex-1 md:flex-none
-    cursor-pointer
-    flex items-center justify-center gap-2
-    bg-blue-600 text-white
-    px-4 md:px-4 py-2
-    rounded-lg
-    hover:bg-blue-700
-    transition-colors
-  "
->
-  <FiUserPlus className="w-7 h-7 md:w-5 md:h-5" />
-
-  {/* Matn faqat md va undan katta ekranlarda chiqadi */}
-  <span className="hidden md:inline">
-    O'quvchi qo'shish
-  </span>
-</button>
-
+                <button
+                    onClick={() => setIsAddStudentModalOpen(true)}
+                    className="flex-1 md:flex-none cursor-pointer flex items-center justify-center gap-2 bg-blue-600 text-white px-4 md:px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                    <FiUserPlus className="w-7 h-7 md:w-5 md:h-5" />
+                    <span className="hidden md:inline">O'quvchi qo'shish</span>
+                </button>
             </div>
         </div>
 
         <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                         <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase">F.I.SH</th>
                         <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Telefon</th>
                         <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Ota-ona</th>
-
-                        {/* Previous Month */}
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell border-l border-gray-200 bg-gray-50">
-                            {monthNames[prevDate.month - 1]} (To'langan)
-                        </th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell bg-gray-50">
-                            {monthNames[prevDate.month - 1]} (Qarzdorlik)
-                        </th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell bg-gray-50">
-                             {monthNames[prevDate.month - 1]} (Status)
-                        </th>
-
-                        {/* Current Month */}
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell border-l border-gray-200">
-                            {monthNames[selectedDate.month - 1]} (To'langan)
-                        </th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">
-                            {monthNames[selectedDate.month - 1]} (Qarzdorlik)
-                        </th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">
-                            {monthNames[selectedDate.month - 1]} (Status)
-                        </th>
-
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">To'langan</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Qarzdorlik</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Status</th>
                         <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right md:text-left">Amallar</th>
                     </tr>
                 </thead>
@@ -436,10 +470,7 @@ const [attendanceDate, setAttendanceDate] = useState(
                             <td colSpan="7" className="px-4 md:px-6 py-4 text-center text-gray-500">Guruhda o'quvchilar yo'q</td>
                         </tr>
                     ) : (
-                        studentPayments.map((student) => {
-                            const prevStudent = prevGroup?.studentPayments?.find(s => s.studentId === student.studentId);
-
-                            return (
+                        studentPayments.map((student) => (
                             <tr key={student.studentId} className="hover:bg-gray-50">
                                 <td className="px-4 md:px-6 py-4 text-sm font-medium text-gray-900">
                                     <div className="flex flex-col gap-1">
@@ -468,32 +499,7 @@ const [attendanceDate, setAttendanceDate] = useState(
                                 <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
                                     {student.parentPhoneNumber || '-'}
                                 </td>
-
-                                {/* Previous Month Data */}
-                                <td className="px-6 py-4 text-sm font-bold text-green-600 hidden md:table-cell border-l border-gray-200 bg-gray-50">
-                                    {prevStudent ? formatCurrency(prevStudent.totalPaidInMonth) : '-'}
-                                </td>
-                                <td className="px-6 py-4 text-sm font-bold text-red-600 hidden md:table-cell bg-gray-50">
-                                    {prevStudent ? formatCurrency(prevStudent.remainingAmount) : '-'}
-                                </td>
-                                <td className="px-6 py-4 text-sm hidden md:table-cell bg-gray-50">
-                                    {prevStudent ? (
-                                        <>
-                                            {prevStudent.paymentStatus === 'PAID' && (
-                                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">To'liq</span>
-                                            )}
-                                            {prevStudent.paymentStatus === 'PARTIAL' && (
-                                                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-semibold">Qisman</span>
-                                            )}
-                                            {prevStudent.paymentStatus === 'UNPAID' && (
-                                                <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-semibold">To'lanmagan</span>
-                                            )}
-                                        </>
-                                    ) : '-'}
-                                </td>
-
-                                {/* Current Month Data */}
-                                <td className="px-6 py-4 text-sm font-bold text-green-600 hidden md:table-cell border-l border-gray-200">
+                                <td className="px-6 py-4 text-sm font-bold text-green-600 hidden md:table-cell">
                                     {formatCurrency(student.totalPaidInMonth)}
                                 </td>
                                 <td className="px-6 py-4 text-sm font-bold text-red-600 hidden md:table-cell">
@@ -536,8 +542,7 @@ const [attendanceDate, setAttendanceDate] = useState(
                                     </div>
                                 </td>
                             </tr>
-                            );
-                        })
+                        ))
                     )}
                 </tbody>
             </table>
@@ -709,6 +714,91 @@ const [attendanceDate, setAttendanceDate] = useState(
                 </button>
             </div>
           </form>
+      </Modal>
+
+      {/* Payment Modal */}
+      <Modal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        title={`To'lov qilish - ${selectedStudentForPayment?.studentName || ''}`}
+      >
+        <form onSubmit={handlePaymentSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Summa (UZS)</label>
+            <input
+              type="number"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              value={paymentFormData.amount}
+              onChange={(e) => setPaymentFormData({...paymentFormData, amount: e.target.value})}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">To'lov usuli</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer p-3 border-2 rounded-lg flex-1 transition-all hover:bg-gray-50"
+                style={{
+                  borderColor: paymentFormData.paymentMethod === 'CASH' ? '#3b82f6' : '#d1d5db',
+                  backgroundColor: paymentFormData.paymentMethod === 'CASH' ? '#eff6ff' : 'transparent'
+                }}>
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="CASH"
+                  checked={paymentFormData.paymentMethod === 'CASH'}
+                  onChange={(e) => setPaymentFormData({...paymentFormData, paymentMethod: e.target.value})}
+                  className="w-4 h-4"
+                />
+                <FiDollarSign className="text-green-600" />
+                <span className="font-medium">Naqd</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer p-3 border-2 rounded-lg flex-1 transition-all hover:bg-gray-50"
+                style={{
+                  borderColor: paymentFormData.paymentMethod === 'CARD' ? '#3b82f6' : '#d1d5db',
+                  backgroundColor: paymentFormData.paymentMethod === 'CARD' ? '#eff6ff' : 'transparent'
+                }}>
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="CARD"
+                  checked={paymentFormData.paymentMethod === 'CARD'}
+                  onChange={(e) => setPaymentFormData({...paymentFormData, paymentMethod: e.target.value})}
+                  className="w-4 h-4"
+                />
+                <FiDollarSign className="text-blue-600" />
+                <span className="font-medium">Karta</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Izoh</label>
+            <textarea
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              rows="3"
+              value={paymentFormData.description}
+              onChange={(e) => setPaymentFormData({...paymentFormData, description: e.target.value})}
+            ></textarea>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              type="button"
+              onClick={() => setIsPaymentModalOpen(false)}
+              className="cursor-pointer px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="submit"
+              disabled={paymentMutation.isLoading}
+              className="cursor-pointer px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {paymentMutation.isLoading ? 'Yuklanmoqda...' : 'Saqlash'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );
