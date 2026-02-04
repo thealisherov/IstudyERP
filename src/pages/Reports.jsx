@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { reportsApi } from '../api/reports.api';
 import { branchesApi } from '../api/branches.api';
-import { paymentsApi } from '../api/payments.api';
-import { productSalesApi } from '../api/productSales.api';
 import { useAuth } from '../hooks/useAuth';
 import { FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiMapPin, FiCreditCard, FiShoppingBag } from 'react-icons/fi';
 
@@ -36,59 +34,20 @@ const Reports = () => {
       if (!selectedBranchId && user?.role === 'SUPER_ADMIN') return null;
 
       const params = { startDate, endDate, branchId: selectedBranchId };
-      let response;
 
       if (activeTab === 'financial') {
-        // Fetch base financial summary
-        const financialRes = await reportsApi.getFinancialSummaryRange(params);
-        let data = financialRes.data;
-
-        // Fetch product sales total for the period
-        const productSalesRes = await productSalesApi.getByDateRange(startDate, endDate, params);
-        const productSales = productSalesRes.data || [];
-        const totalProductSales = productSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-
-        // Update financial data with product sales
-        // Assuming totalIncome in data only includes course payments
-        // We add product sales to income and net profit
-        return {
-          ...data,
-          productSalesIncome: totalProductSales,
-          totalIncome: (data.totalIncome || 0) + totalProductSales,
-          netProfit: (data.netProfit || 0) + totalProductSales
-        };
+        const response = await reportsApi.getFinancialSummaryRange(params);
+        return response?.data;
       } else if (activeTab === 'payments') {
-        const paymentsRes = await paymentsApi.getByDateRange(params);
-        const payments = paymentsRes.data || [];
-
-        const total = payments.reduce((sum, p) => sum + p.amount, 0);
-        const cash = payments.filter(p => p.category === 'CASH').reduce((sum, p) => sum + p.amount, 0);
-        const card = payments.filter(p => p.category === 'CARD').reduce((sum, p) => sum + p.amount, 0);
-
-        return {
-            totalPayments: total,
-            cashTotal: cash,
-            cardTotal: card,
-            paymentsList: payments
-        };
+        const response = await reportsApi.getPaymentsByRange(params);
+        return response?.data;
       } else if (activeTab === 'expenses') {
-        response = await reportsApi.getExpensesByRange(params);
+        const response = await reportsApi.getExpensesByRange(params);
         return response?.data;
       } else if (activeTab === 'product-sales') {
-        const productSalesRes = await productSalesApi.getByDateRange(startDate, endDate, params);
-        const sales = productSalesRes.data || [];
-
-        const total = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-        const byCategory = sales.reduce((acc, s) => {
-          acc[s.category] = (acc[s.category] || 0) + s.totalAmount;
-          return acc;
-        }, {});
-
-        return {
-          totalSales: total,
-          byCategory,
-          salesList: sales
-        };
+        // Product sales data is included in financial summary
+        const response = await reportsApi.getFinancialSummaryRange(params);
+        return response?.data;
       }
 
       return null;
@@ -312,16 +271,18 @@ const ProductSalesReport = ({ data }) => {
     { value: 'OTHER', label: 'Boshqa' }
   ];
 
+  const byCategory = data?.byCategory || {};
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-gray-500 font-medium">Jami Tushum</h3>
+          <h3 className="text-gray-500 font-medium">Qo'shimcha Tushumlar</h3>
           <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
             <FiShoppingBag className="text-yellow-600" />
           </div>
         </div>
-        <p className="text-2xl font-bold text-gray-900">{data.totalSales?.toLocaleString() || 0} UZS</p>
+        <p className="text-2xl font-bold text-gray-900">{(data?.productSalesIncome || data?.totalSales || 0)?.toLocaleString()} UZS</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -329,7 +290,7 @@ const ProductSalesReport = ({ data }) => {
           <div key={cat.value} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h3 className="text-gray-500 font-medium mb-2">{cat.label}</h3>
             <p className="text-lg font-bold text-gray-900">
-              {(data.byCategory[cat.value] || 0).toLocaleString()} UZS
+              {(byCategory[cat.value] || 0).toLocaleString()} UZS
             </p>
           </div>
         ))}
